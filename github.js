@@ -29,6 +29,15 @@ export class NotVisibleError extends Error {}
 // Fine-grained PATs cannot call /search/issues at all. Discovery ("which PRs
 // await my review") depends on search, so it has to degrade rather than break.
 export class SearchUnavailableError extends Error {}
+// SAML-protected orgs answer 403 with an x-github-sso header carrying the URL
+// that authorises this specific token for the org. The token itself is valid,
+// so this is a one-click fix — but only if we surface the link.
+export class SsoRequiredError extends Error {
+  constructor(url) {
+    super('This token needs to be authorised for the organisation');
+    this.ssoUrl = url;
+  }
+}
 
 /* ---------------- token storage ---------------- */
 
@@ -177,6 +186,12 @@ async function api(path, token) {
 
   if (res.status === 401) throw new AuthError('GitHub rejected the stored token');
   if (res.status === 403 || res.status === 429) {
+    const sso = res.headers.get('x-github-sso') || '';
+    // Checked before the rate-limit branch: an SSO 403 also reports remaining
+    // requests, so testing rate limit first would misreport it.
+    if (sso.includes('required')) {
+      throw new SsoRequiredError((/url=(\S+)/.exec(sso) || [])[1] || '');
+    }
     if (res.headers.get('x-ratelimit-remaining') === '0') {
       throw new RateLimitError(Number(res.headers.get('x-ratelimit-reset') || 0) * 1000);
     }

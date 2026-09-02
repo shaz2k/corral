@@ -98,6 +98,25 @@ async function refreshGithub() {
     const via = github.kind === 'pat' ? 'token' : 'GitHub sign-in';
     el('ghLogin').textContent = `@${github.login} · via ${via}`;
     el('ghNoSearch').hidden = github.canSearch !== false;
+
+    // Surface a live sync failure here too — the popup is where people look
+    // when PR groups aren't appearing.
+    const problem = el('ghProblem');
+    problem.textContent = '';
+    const { error } = await send({ type: 'getPrState' });
+    problem.hidden = !error;
+    if (error) {
+      problem.append(error.message);
+      if (error.url) {
+        const link = document.createElement('a');
+        link.href = error.url;
+        link.target = '_blank';
+        link.rel = 'noreferrer';
+        link.className = 'banner-link';
+        link.textContent = 'Authorise this token →';
+        problem.append(link);
+      }
+    }
     // Discovery needs search; hide the toggles that cannot work rather than
     // leaving switches that silently do nothing.
     const searchable = github.canSearch !== false;

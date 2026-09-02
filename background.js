@@ -10,6 +10,7 @@ import {
   connectWithPat,
   NotVisibleError,
   SearchUnavailableError,
+  SsoRequiredError,
   getPendingDeviceFlow,
   getToken,
   pollDeviceFlow,
@@ -361,6 +362,7 @@ async function syncPullRequests() {
   const bucketOf = (s) => (!s ? 'unknown' : s.awaitingViewer || s.reviewedByViewer ? 'review' : s.isMine ? 'mine' : 'other');
   let bucketsChanged = false;
   let notVisible = 0;
+  let ssoUrl = null;
 
   for (const [key, tab] of refsByKey) {
     const ref = prRefForUrl(tab.url);
@@ -396,12 +398,28 @@ async function syncPullRequests() {
       // and the token lacks access — for OAuth Apps that is often an org policy
       // blocking unapproved apps. Count these so we can explain it, rather than
       // silently leaving every tab unclassified.
+      if (error instanceof SsoRequiredError) {
+        // Valid token, just not yet authorised for this org. One-click fix, so
+        // stop the loop and surface the link rather than retrying 50 times.
+        ssoUrl = error.ssoUrl || ssoUrl;
+        break;
+      }
       if (error instanceof NotVisibleError) notVisible += 1;
       // Any other error: leave the last known state alone and move on.
     }
   }
 
   await chrome.storage.local.set({ [PR_STATES_KEY]: states });
+
+  if (ssoUrl) {
+    await setPrError({
+      kind: 'sso',
+      message:
+        'Your organisation requires single sign-on for this token. Authorise it for the org and Corral will start working — nothing else needs changing.',
+      url: ssoUrl,
+    });
+    return { synced: 0, error: 'sso' };
+  }
 
   // If nothing at all could be read, the token is the problem — say so instead
   // of leaving every tab in the neutral group with no explanation.
@@ -450,6 +468,15 @@ async function checkReviewRequests() {
   try {
     requests = await fetchReviewRequests(token.accessToken, token.canSearch !== false);
   } catch (error) {
+    if (error instanceof SsoRequiredError) {
+      await setPrError({
+        kind: 'sso',
+        message:
+          'Your organisation requires single sign-on for this token. Authorise it for the org to enable review tracking.',
+        url: error.ssoUrl || '',
+      });
+      return { found: 0, error: 'sso' };
+    }
     if (error instanceof SearchUnavailableError) {
       // Fine-grained PAT: discovery is impossible, but status tracking on tabs
       // the user opens still works, so this is a notice rather than a failure.
@@ -898,6 +925,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           if (error instanceof AuthError) {
             await clearToken();
             return { connected: false, prs: [], error: 'auth' };
+          }
+          if (error instanceof SsoRequiredError) {
+            return { connected: true, prs: [], error: 'sso', ssoUrl: error.ssoUrl || '' };
           }
           if (error instanceof SearchUnavailableError) {
             return { connected: true, prs: [], canSearch: false };

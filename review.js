@@ -321,8 +321,21 @@ async function loadPrs() {
   }
 
   const banner = el('prBanner');
+  banner.textContent = '';
   banner.hidden = !state.error;
-  if (state.error) banner.textContent = state.error.message;
+  if (state.error) {
+    banner.append(state.error.message);
+    // An SSO failure is fixed by visiting one URL, so make it reachable.
+    if (state.error.url) {
+      const link = document.createElement('a');
+      link.href = state.error.url;
+      link.target = '_blank';
+      link.rel = 'noreferrer';
+      link.className = 'banner-link';
+      link.textContent = 'Authorise this token →';
+      banner.append(link);
+    }
+  }
 
   renderPrTabs(state.prTabs);
   renderPrUndo(state.undo);
