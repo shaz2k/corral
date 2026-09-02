@@ -1,4 +1,4 @@
-import { groupKeyForUrl, labelForKey, colorForKey, PR_KEY } from './domain.js';
+import { groupKeyForUrl, labelForKey, colorForKey, isPrKey, PR_KEY, REVIEW_KEY, MINE_KEY } from './domain.js';
 import {
   AuthError,
   RateLimitError,
@@ -6,6 +6,7 @@ import {
   clearToken,
   fetchMyOpenPrs,
   fetchPrState,
+  fetchReviewRequests,
   getPendingDeviceFlow,
   getToken,
   pollDeviceFlow,
@@ -24,6 +25,8 @@ const DEFAULTS = {
   prGroupingEnabled: true,
   prAutoClose: false,
   prNotifyOnMerge: true,
+  reviewWatchEnabled: true,
+  reviewAutoOpen: true,
 };
 
 const ACTIVITY_KEY = 'activity';
@@ -32,6 +35,9 @@ const LAST_NOTIFY_KEY = 'lastNotifyAt';
 const PR_STATES_KEY = 'prStates';
 const PR_UNDO_KEY = 'prUndo';
 const PR_ERROR_KEY = 'prLastError';
+// PRs we have already auto-opened a tab for. Without this, closing an
+// auto-opened tab would just make it reappear on the next poll.
+const SEEN_REVIEWS_KEY = 'seenReviewRequests';
 const STALE_ALARM = 'tab-tidy-stale-scan';
 const PR_ALARM = 'corral-pr-sync';
 const DEVICE_ALARM = 'corral-device-poll';
@@ -92,13 +98,26 @@ async function seedActivity() {
 
 /* ---------------- grouping ---------------- */
 
-// PR tabs divert into their own bucket, but only while GitHub is actually
+// PR tabs divert into their own buckets, but only while GitHub is actually
 // connected — otherwise we can't tell merged from open and the group is just a
 // worse-labelled github.com group.
-function keyForTab(tab, prGrouping) {
+//
+// Which bucket depends on what the PR wants from you. `states` is the cached
+// PR data; until a PR has been fetched we can't classify it, so it waits in the
+// neutral group rather than guessing wrong and having the tab jump groups.
+function keyForTab(tab, prGrouping, states) {
   const url = tab.url || tab.pendingUrl;
-  if (prGrouping && prRefForUrl(url)) return PR_KEY;
-  return groupKeyForUrl(url);
+  if (!prGrouping) return groupKeyForUrl(url);
+  const ref = prRefForUrl(url);
+  if (!ref) return groupKeyForUrl(url);
+
+  const known = states?.[ref.key];
+  if (!known) return PR_KEY;
+  // Reviews stay in Review even after you submit, so the tab doesn't hop
+  // groups the instant you approve. reviewedByViewer is our own sticky flag.
+  if (known.awaitingViewer || known.reviewedByViewer) return REVIEW_KEY;
+  if (known.isMine) return MINE_KEY;
+  return PR_KEY;
 }
 
 const pending = new Map();
@@ -137,6 +156,7 @@ async function doRegroupWindow(windowId) {
   const managed = await getManaged();
   const startingCount = Object.keys(managed).length;
   const prGrouping = settings.prGroupingEnabled && Boolean(await getToken());
+  const prStates = prGrouping ? await getPrStates() : null;
 
   // Existing managed groups in this window, by key. Drop records for groups
   // that no longer exist.
@@ -156,7 +176,7 @@ async function doRegroupWindow(windowId) {
   // Without this, new tabs can't join the group the user already thinks of as theirs.
   const keysInWindow = new Set();
   for (const tab of tabs) {
-    const key = keyForTab(tab, prGrouping);
+    const key = keyForTab(tab, prGrouping, prStates);
     if (key) keysInWindow.add(key);
   }
   const labelToKey = new Map([...keysInWindow].map((key) => [labelForKey(key).toLowerCase(), key]));
@@ -178,7 +198,7 @@ async function doRegroupWindow(windowId) {
   const buckets = new Map();
   for (const tab of tabs) {
     if (tab.pinned) continue;
-    const key = keyForTab(tab, prGrouping);
+    const key = keyForTab(tab, prGrouping, prStates);
     if (!key) continue;
     // Leave groups the user made by hand alone.
     if (tab.groupId !== NO_GROUP && !managedIds.has(tab.groupId)) continue;
@@ -191,9 +211,9 @@ async function doRegroupWindow(windowId) {
   for (const [key, bucketTabs] of buckets) {
     const existingGroupId = existingByKey.get(key);
 
-    // The PR group is semantic, not a pile of same-domain tabs — one open PR is
-    // already worth its own group, so the domain threshold doesn't apply.
-    const threshold = key === PR_KEY ? 1 : settings.minTabsPerGroup;
+    // The PR groups are semantic, not a pile of same-domain tabs — one open PR
+    // is already worth its own group, so the domain threshold doesn't apply.
+    const threshold = isPrKey(key) ? 1 : settings.minTabsPerGroup;
     if (bucketTabs.length < threshold) {
       // Not enough tabs to justify a group we created. Release any we still hold —
       // but never dissolve a group the user made themselves.
@@ -273,6 +293,7 @@ async function findPrTabs() {
     const ref = prRefForUrl(tab.url || tab.pendingUrl);
     if (!ref) continue;
     const known = states[ref.key];
+    const forReview = Boolean(known?.awaitingViewer || known?.reviewedByViewer);
     result.push({
       id: tab.id,
       windowId: tab.windowId,
@@ -286,6 +307,10 @@ async function findPrTabs() {
       active: tab.active,
       state: known?.state || 'unknown',
       checkedAt: known?.checkedAt || 0,
+      isMine: Boolean(known?.isMine),
+      awaitingViewer: Boolean(known?.awaitingViewer),
+      forReview,
+      bucket: forReview ? 'review' : known?.isMine ? 'mine' : 'other',
     });
   }
   return result;
@@ -294,6 +319,19 @@ async function findPrTabs() {
 let prSyncChain = Promise.resolve();
 
 function queuePrSync() {
+  prSyncChain = prSyncChain
+    .then(() => syncPullRequests())
+    .then(async (result) => {
+      const review = await checkReviewRequests().catch(() => null);
+      return { ...result, reviewFound: review?.found || 0, reviewOpened: review?.opened || 0 };
+    })
+    .catch(() => {});
+  return prSyncChain;
+}
+
+// Status-only refresh, for events where discovering new review requests would be
+// surprising (e.g. the user merely navigated a tab to a PR).
+function queueStatusSync() {
   prSyncChain = prSyncChain.then(() => syncPullRequests()).catch(() => {});
   return prSyncChain;
 }
@@ -320,9 +358,13 @@ async function syncPullRequests() {
     const ref = prRefForUrl(tab.url);
     if (!ref) continue;
     try {
-      const state = await fetchPrState(ref, token.accessToken);
-      const previous = states[key]?.state;
-      states[key] = { ...state, checkedAt: now };
+      const state = await fetchPrState(ref, token.accessToken, token.login);
+      const prev = states[key];
+      const previous = prev?.state;
+      // Once a PR has been in your review queue it stays flagged, so submitting
+      // a review (which clears requested_reviewers) doesn't move the tab.
+      const reviewedByViewer = Boolean(prev?.reviewedByViewer || prev?.awaitingViewer);
+      states[key] = { ...state, reviewedByViewer, checkedAt: now };
       // Only fire on the transition, so a tab left open for days doesn't get
       // re-notified (or re-closed after the user chose to reopen it).
       const resolved = state.state === 'merged' || state.state === 'closed';
@@ -356,6 +398,106 @@ async function syncPullRequests() {
 
   await updateBadgeFromScan();
   return { synced: refsByKey.size, resolved: newlyResolved.length };
+}
+
+/* ---------------- review request watcher ---------------- */
+
+async function getSeenReviews() {
+  const { [SEEN_REVIEWS_KEY]: seen } = await chrome.storage.local.get(SEEN_REVIEWS_KEY);
+  return seen || {};
+}
+
+// Finds review requests that are new since the last check and opens a tab for
+// each. Runs on the same alarm as the status sync.
+async function checkReviewRequests() {
+  const token = await getToken();
+  if (!token) return { found: 0 };
+
+  const settings = await getSettings();
+  if (!settings.reviewWatchEnabled) return { found: 0 };
+
+  let requests;
+  try {
+    requests = await fetchReviewRequests(token.accessToken);
+  } catch (error) {
+    if (error instanceof AuthError) {
+      await clearToken();
+      await setPrError({ kind: 'auth', message: 'GitHub disconnected — reconnect to keep tracking PRs.' });
+      return { found: 0, error: 'auth' };
+    }
+    if (error instanceof RateLimitError) {
+      await setPrError({ kind: 'rate', message: 'GitHub rate limit reached. Retrying later.', resetAt: error.resetAt });
+      return { found: 0, error: 'rate' };
+    }
+    return { found: 0, error: String(error.message || error) };
+  }
+
+  const seen = await getSeenReviews();
+  const openTabs = await findPrTabs();
+  const openKeys = new Set(openTabs.map((tab) => tab.key));
+  const now = Date.now();
+
+  // Anything we have never acted on before. Keyed on our own record rather than
+  // on open tabs, so closing an auto-opened tab doesn't make it come back.
+  const fresh = requests.filter((pr) => !seen[pr.key]);
+  for (const pr of requests) {
+    if (!seen[pr.key]) seen[pr.key] = { firstSeenAt: now, opened: false };
+  }
+
+  // Record the state of these PRs so grouping can classify them immediately,
+  // rather than leaving a freshly opened tab in the neutral group for a cycle.
+  if (fresh.length) {
+    const states = await getPrStates();
+    for (const pr of fresh) {
+      states[pr.key] = {
+        ...(states[pr.key] || {}),
+        state: pr.draft ? 'draft' : 'open',
+        title: pr.title,
+        repo: pr.repo,
+        number: pr.number,
+        url: pr.url,
+        updatedAt: pr.updatedAt,
+        isMine: false,
+        awaitingViewer: true,
+        reviewedByViewer: true,
+        checkedAt: now,
+      };
+    }
+    await chrome.storage.local.set({ [PR_STATES_KEY]: states });
+  }
+
+  const toOpen = settings.reviewAutoOpen ? fresh.filter((pr) => !openKeys.has(pr.key)) : [];
+  for (const pr of toOpen) {
+    try {
+      await chrome.tabs.create({ url: pr.url, active: false });
+      seen[pr.key].opened = true;
+    } catch {}
+  }
+
+  await chrome.storage.local.set({ [SEEN_REVIEWS_KEY]: seen });
+
+  if (fresh.length) {
+    if (toOpen.length) await regroupAllWindows();
+    notifyReviewRequests(fresh, toOpen.length);
+  }
+
+  await updateBadgeFromScan();
+  return { found: fresh.length, opened: toOpen.length };
+}
+
+function notifyReviewRequests(fresh, openedCount) {
+  const first = fresh[0];
+  const many = fresh.length > 1;
+  chrome.notifications.create('corral-review-requested', {
+    type: 'basic',
+    iconUrl: 'icons/icon128.png',
+    title: many ? `${fresh.length} PRs need your review` : 'A PR needs your review',
+    message: openedCount
+      ? `${first.repo} #${first.number}${many ? ' and others' : ''} — opened in your Review group.`
+      : `${first.repo} #${first.number}${many ? ' and others' : ''} — open the review page to see them.`,
+    buttons: [{ title: 'Show me' }, { title: 'Dismiss' }],
+    requireInteraction: false,
+  });
 }
 
 async function autoCloseResolved(resolved) {
@@ -466,9 +608,14 @@ async function findStaleTabs() {
   return { stale, settings };
 }
 
-// Resolved PR tabs take badge priority over stale ones — they're a stronger,
-// more actionable signal, and they're shown in green rather than amber.
-async function updateBadge(staleCount, resolvedPrCount = 0) {
+// Badge priority: PRs waiting on your review (orange) beat finished PR tabs
+// (green), which beat stale tabs (amber). Most actionable signal wins.
+async function updateBadge(staleCount, resolvedPrCount = 0, awaitingReview = 0) {
+  if (awaitingReview > 0) {
+    await chrome.action.setBadgeText({ text: String(awaitingReview) });
+    await chrome.action.setBadgeBackgroundColor({ color: '#bc4c00' });
+    return;
+  }
   if (resolvedPrCount > 0) {
     await chrome.action.setBadgeText({ text: String(resolvedPrCount) });
     await chrome.action.setBadgeBackgroundColor({ color: '#1a7f37' });
@@ -484,9 +631,15 @@ async function countResolvedPrTabs() {
   return prTabs.filter((tab) => tab.state === 'merged' || tab.state === 'closed').length;
 }
 
+async function countAwaitingReview() {
+  if (!(await getToken())) return 0;
+  const prTabs = await findPrTabs();
+  return prTabs.filter((tab) => tab.awaitingViewer && tab.state !== 'merged' && tab.state !== 'closed').length;
+}
+
 async function scanStale() {
   const { stale, settings } = await findStaleTabs();
-  await updateBadge(stale.length, await countResolvedPrTabs());
+  await updateBadge(stale.length, await countResolvedPrTabs(), await countAwaitingReview());
   if (!settings.staleEnabled || stale.length < settings.staleMinCount) return;
 
   const { [LAST_NOTIFY_KEY]: lastNotifyAt } = await chrome.storage.local.get(LAST_NOTIFY_KEY);
@@ -575,7 +728,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     scheduleRegroup(tab.windowId);
     // A tab that just became a PR needs its state fetched before the group
     // badge or review page can say anything useful about it.
-    if (prRefForUrl(changeInfo.url)) queuePrSync().catch(() => {});
+    if (prRefForUrl(changeInfo.url)) queueStatusSync().catch(() => {});
   } else if (changeInfo.title) {
     touchTab(tabId).catch(() => {});
   }
@@ -620,20 +773,26 @@ chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) =
     if (buttonIndex === 0) openReview('#prs');
   } else if (notificationId.startsWith('corral-pr-closed-')) {
     if (buttonIndex === 0) reopenPrTabs().catch(() => {});
+  } else if (notificationId === 'corral-review-requested') {
+    if (buttonIndex === 0) openReview('#prs');
   }
 });
 
 chrome.notifications.onClicked.addListener((notificationId) => {
   chrome.notifications.clear(notificationId);
   if (notificationId === 'tab-tidy-stale') openReview();
-  else if (notificationId === 'corral-pr-resolved' || notificationId.startsWith('corral-pr-closed-')) {
+  else if (
+    notificationId === 'corral-pr-resolved' ||
+    notificationId === 'corral-review-requested' ||
+    notificationId.startsWith('corral-pr-closed-')
+  ) {
     openReview('#prs');
   }
 });
 
 async function updateBadgeFromScan() {
   const { stale } = await findStaleTabs();
-  await updateBadge(stale.length, await countResolvedPrTabs());
+  await updateBadge(stale.length, await countResolvedPrTabs(), await countAwaitingReview());
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -642,11 +801,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       case 'getState': {
         const { stale, settings } = await findStaleTabs();
         const token = await getToken();
-        return {
-          stale,
-          settings,
-          github: token ? { connected: true, login: token.login } : { connected: false },
-        };
+        if (token) return { stale, settings, github: { connected: true, login: token.login } };
+        // Hand back any in-flight device flow so a reopened popup can resume it
+        // instead of showing Connect again.
+        const pendingDevice = await getPendingDeviceFlow();
+        return { stale, settings, github: { connected: false, pendingDevice } };
       }
       case 'saveSettings': {
         await chrome.storage.sync.set(message.settings);
@@ -689,7 +848,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             await chrome.tabs.create({ url, active: false });
           } catch {}
         }
-        await queuePrSync();
+        await queueStatusSync();
         await regroupAllWindows();
         return { ok: true };
       }
@@ -739,7 +898,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         await clearToken();
         await chrome.alarms.clear(PR_ALARM);
         await chrome.alarms.clear(DEVICE_ALARM);
-        await chrome.storage.local.remove([PR_STATES_KEY, PR_UNDO_KEY, PR_ERROR_KEY]);
+        await chrome.storage.local.remove([PR_STATES_KEY, PR_UNDO_KEY, PR_ERROR_KEY, SEEN_REVIEWS_KEY]);
         await regroupAllWindows();
         await updateBadgeFromScan();
         return { ok: true };

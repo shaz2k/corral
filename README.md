@@ -1,10 +1,12 @@
 # Corral — Automatic Tab Groups
 
-A lightweight Chrome extension that groups your tabs by site automatically, keeps your
-GitHub pull requests together, and helps you review the ones you have stopped using.
+A lightweight Chrome extension that groups your tabs by site automatically, sorts your
+GitHub pull requests by whether they need your review, and helps you review the ones you
+have stopped using.
 
-Corral never closes a tab without asking first. Nothing closes automatically unless you
-turn it on yourself.
+Corral never closes a tab without asking first — nothing closes automatically unless you turn
+it on yourself. It does *open* a tab on its own for each new PR awaiting your review, which
+you can switch off.
 
 ## What it does
 
@@ -19,13 +21,26 @@ turn it on yourself.
 
 ## Pull request tracking (optional)
 
-Connect a GitHub account and Corral keeps every pull request tab in its own "Pull requests"
-group, separate from ordinary `github.com` tabs, and labels each one Open, Draft, Merged, or
-Closed. Once a PR lands, its tab is flagged **safe to close** and pre-selected on the review
-page, so clearing finished work is one click.
+Connect a GitHub account and Corral sorts your pull request tabs by what each one wants from
+you, into three groups:
 
-You can also see the PRs you authored or have been asked to review, and open any that do not
-have a tab yet.
+| Group | Colour | Holds |
+|---|---|---|
+| **Review** | orange | PRs waiting on your review |
+| **My PRs** | blue | PRs you authored |
+| **Pull requests** | purple | Everyone else's, that you happen to have open |
+
+Each tab is labelled Open, Draft, Merged, or Closed. Once a PR lands, its tab is flagged
+**safe to close** and pre-selected on the review page, so clearing finished work is one click.
+
+**Review requests find you.** Corral checks every five minutes for PRs that have been
+assigned to you, opens each new one in a background tab in the Review group, and tells you.
+Turn off *Open review requests in a tab* to be notified without the tab, or turn off *Watch
+for review requests* to stop checking entirely.
+
+A PR stays in Review after you submit your review — GitHub drops you from the reviewer list
+at that point, but the tab stays put rather than hopping groups mid-task, and is relabelled
+*reviewed by you*. It leaves only when the PR merges or closes.
 
 Sign-in uses GitHub's OAuth **device flow** — you type a short code into
 `github.com/login/device`, so no password or token is ever entered into the extension.

@@ -9,8 +9,9 @@ on your own device inside Chrome's storage.
 
 There is one exception, and it is entirely your choice: if you connect your GitHub account,
 Corral talks directly to GitHub's public API to find out whether your pull requests are
-still open. Those requests go from your browser straight to `api.github.com`. They do not
-pass through any server of ours, because there isn't one.
+still open, and to check whether anyone has asked you to review one. Those requests go from
+your browser straight to `api.github.com`. They do not pass through any server of ours,
+because there isn't one.
 
 ## What Corral accesses
 
@@ -31,9 +32,11 @@ Corral stores the following using Chrome's own extension storage API:
    idle hours count as stale, and whether notifications are on.
 2. **A local activity map** — for each open tab, its last-active timestamp, URL, and title,
    plus a record of which tab groups Corral created.
-3. **If you connect GitHub:** your GitHub access token, your GitHub username, and the last
-   known status of the pull requests you have open in a tab (title, repository, number, and
-   whether it is open, draft, merged, or closed).
+3. **If you connect GitHub:** your GitHub access token, your GitHub username, the last
+   known status of the pull requests you have open in a tab (title, repository, number,
+   author, whether you are a requested reviewer, and whether it is open, draft, merged, or
+   closed), and a list of which review requests Corral has already shown you — so that a tab
+   you closed is not opened again.
 
 This data lives on your computer. Settings sync through your Chrome profile only if you
 have Chrome Sync enabled, which is Google's feature and under your control. The activity
@@ -54,7 +57,12 @@ This feature is off until you turn it on. Nothing below happens unless you conne
 - **Permission is requested late.** Access to `github.com` is an *optional* host permission.
   Chrome only asks for it at the moment you press Connect — not when you install Corral.
 - **What Corral asks GitHub.** The status of pull requests you already have open in a tab,
-  and a list of the pull requests you authored or have been asked to review. Read-only.
+  and a list of the pull requests you authored or have been asked to review. While connected
+  it repeats the review-request query every few minutes so newly assigned reviews can be
+  surfaced. Read-only.
+- **Opening tabs.** By default, a new PR awaiting your review is opened in a background tab.
+  This uses only the PR's public GitHub URL. You can turn tab-opening off and keep the
+  notification, or stop the checking entirely, from the extension popup.
 - **What Corral never does on GitHub.** It never posts, comments, approves, merges, closes,
   or changes anything. It only reads.
 - **Where the token goes.** To `api.github.com`, as GitHub requires, and nowhere else. It is
@@ -81,9 +89,9 @@ This feature is off until you turn it on. Nothing below happens unless you conne
 | `tabs` | Read tab URLs to determine each tab's domain, and track when tabs were last used |
 | `tabGroups` | Create and update Chrome tab groups |
 | `storage` | Save settings and the local activity map on your device |
-| `alarms` | Periodically check for stale tabs, and for pull request status if GitHub is connected |
-| `notifications` | Show the optional notifications for stale tabs and for merged pull requests |
-| `github.com`, `api.github.com` | Optional. Requested only when you connect GitHub, used to sign in and read pull request status. Removed when you disconnect. |
+| `alarms` | Periodically check for stale tabs, and for pull request status and new review requests if GitHub is connected |
+| `notifications` | Show the optional notifications for stale tabs, merged pull requests, and new review requests |
+| `github.com`, `api.github.com` | Optional. Requested only when you connect GitHub, used to sign in, read pull request status, and check for new review requests. Removed when you disconnect. |
 
 ## Changes to this policy
 

@@ -46,13 +46,33 @@ export function groupKeyForUrl(url) {
   return labels.slice(-take).join('.');
 }
 
-// Pull requests get their own group rather than joining the generic github.com
-// one. Not a hostname, so it can never collide with a real grouping key.
+// Pull requests get their own groups rather than joining the generic github.com
+// one, split by what the PR wants from you: your review, your own work, or
+// neither. Not hostnames, so they can never collide with a real grouping key.
+export const REVIEW_KEY = '__pr_review__';
+export const MINE_KEY = '__pr_mine__';
 export const PR_KEY = '__pull_requests__';
+
+const PR_LABELS = {
+  [REVIEW_KEY]: 'Review',
+  [MINE_KEY]: 'My PRs',
+  [PR_KEY]: 'Pull requests',
+};
+
+// Orange for review because it is the one that wants something from you.
+const PR_COLORS = {
+  [REVIEW_KEY]: 'orange',
+  [MINE_KEY]: 'blue',
+  [PR_KEY]: 'purple',
+};
+
+export function isPrKey(key) {
+  return key === REVIEW_KEY || key === MINE_KEY || key === PR_KEY;
+}
 
 // "github.com" -> "Github", "localhost" -> "Localhost", "10.0.0.5" -> "10.0.0.5"
 export function labelForKey(key) {
-  if (key === PR_KEY) return 'Pull requests';
+  if (PR_LABELS[key]) return PR_LABELS[key];
   if (IP_LIKE.test(key)) return key;
   const first = key.split('.')[0];
   return first.charAt(0).toUpperCase() + first.slice(1);
@@ -61,7 +81,7 @@ export function labelForKey(key) {
 const COLORS = ['blue', 'cyan', 'green', 'yellow', 'orange', 'red', 'pink', 'purple', 'grey'];
 
 export function colorForKey(key) {
-  if (key === PR_KEY) return 'purple';
+  if (PR_COLORS[key]) return PR_COLORS[key];
   let hash = 0;
   for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) % 100000;
   return COLORS[hash % COLORS.length];

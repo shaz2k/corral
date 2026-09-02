@@ -1,11 +1,5 @@
-const BOOLEAN_FIELDS = [
-  'groupingEnabled',
-  'collapseNewGroups',
-  'staleEnabled',
-  'prGroupingEnabled',
-  'prAutoClose',
-  'prNotifyOnMerge',
-];
+const PR_FIELDS = ['prGroupingEnabled', 'prAutoClose', 'prNotifyOnMerge', 'reviewWatchEnabled', 'reviewAutoOpen'];
+const BOOLEAN_FIELDS = ['groupingEnabled', 'collapseNewGroups', 'staleEnabled', ...PR_FIELDS];
 const NUMBER_FIELDS = ['minTabsPerGroup', 'staleHours', 'staleMinCount'];
 
 const el = (id) => document.getElementById(id);
@@ -100,11 +94,17 @@ function renderDevice(device) {
 async function refreshGithub() {
   const { github, settings } = await send({ type: 'getState' });
   if (github.connected) {
+    stopPolling();
     el('ghLogin').textContent = `@${github.login}`;
-    for (const field of ['prGroupingEnabled', 'prAutoClose', 'prNotifyOnMerge']) {
-      el(field).checked = settings[field];
-    }
+    for (const field of PR_FIELDS) el(field).checked = settings[field];
     showGithub('connected');
+    return;
+  }
+  // The popup is destroyed every time it closes — including when Copy opens the
+  // GitHub tab — so a connect already in flight has to be picked back up here,
+  // or it looks like nothing happened and the user presses Connect again.
+  if (github.pendingDevice) {
+    renderDevice(github.pendingDevice);
     return;
   }
   showGithub('disconnected');

@@ -71,7 +71,7 @@
     <section>
       <div class="section-head">
         <h2>Pull requests</h2>
-        <div class="muted">Keeps GitHub PRs in one group and tracks when they land.</div>
+        <div class="muted">Splits GitHub PRs into Review, My PRs, and the rest — and tracks when they land.</div>
       </div>
 
       <div id="ghDisconnected">
@@ -110,8 +110,8 @@
 
         <div class="row">
           <label for="prGroupingEnabled">
-            Group PR tabs together
-            <span class="hint">One "Pull requests" group, separate from github.com</span>
+            Group PR tabs by relation
+            <span class="hint">Review, My PRs, and Pull requests — separate from github.com</span>
           </label>
           <span class="switch">
             <input type="checkbox" id="prGroupingEnabled" />
@@ -126,6 +126,28 @@
           </label>
           <span class="switch">
             <input type="checkbox" id="prNotifyOnMerge" />
+            <span class="track"></span>
+          </span>
+        </div>
+
+        <div class="row">
+          <label for="reviewWatchEnabled">
+            Watch for review requests
+            <span class="hint">Checks every 5 min for PRs assigned to you</span>
+          </label>
+          <span class="switch">
+            <input type="checkbox" id="reviewWatchEnabled" />
+            <span class="track"></span>
+          </span>
+        </div>
+
+        <div class="row">
+          <label for="reviewAutoOpen">
+            Open review requests in a tab
+            <span class="hint">New requests appear in the orange "Review" group</span>
+          </label>
+          <span class="switch">
+            <input type="checkbox" id="reviewAutoOpen" />
             <span class="track"></span>
           </span>
         </div>

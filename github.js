@@ -186,8 +186,14 @@ function normaliseState(pr) {
   return pr.draft ? 'draft' : 'open';
 }
 
-export async function fetchPrState(ref, token) {
+export async function fetchPrState(ref, token, viewerLogin) {
   const pr = await api(`/repos/${ref.owner}/${ref.repo}/pulls/${ref.number}`, token);
+  const author = pr.user?.login || '';
+  // requested_reviewers empties out the moment you submit a review, so it can
+  // only ever mean "still waiting on you" — never "was assigned to you".
+  const awaitingViewer = viewerLogin
+    ? (pr.requested_reviewers || []).some((r) => r.login === viewerLogin)
+    : false;
   return {
     state: normaliseState(pr),
     title: pr.title || '',
@@ -195,6 +201,9 @@ export async function fetchPrState(ref, token) {
     number: ref.number,
     url: pr.html_url || prUrlForKey(ref.key),
     updatedAt: Date.parse(pr.updated_at || '') || 0,
+    author,
+    isMine: Boolean(viewerLogin) && author === viewerLogin,
+    awaitingViewer,
   };
 }
 
@@ -224,4 +233,25 @@ export async function fetchMyOpenPrs(token) {
     }
   }
   return [...byKey.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+// Just the PRs waiting on your review, for the background discovery poll.
+export async function fetchReviewRequests(token) {
+  const q = 'is:open is:pr archived:false review-requested:@me';
+  const data = await api(`/search/issues?per_page=50&q=${encodeURIComponent(q)}`, token);
+  const out = [];
+  for (const item of data.items || []) {
+    const ref = prRefForUrl(item.html_url);
+    if (!ref) continue;
+    out.push({
+      key: ref.key,
+      repo: `${ref.owner}/${ref.repo}`,
+      number: ref.number,
+      title: item.title || '',
+      url: item.html_url,
+      draft: Boolean(item.draft),
+      updatedAt: Date.parse(item.updated_at || '') || 0,
+    });
+  }
+  return out;
 }
