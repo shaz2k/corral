@@ -1,12 +1,16 @@
 # Privacy Policy for Corral
 
-**Last updated:** 31 July 2026
+**Last updated:** 2 September 2026
 
 ## Summary
 
-Corral does not collect, transmit, or share any of your data. Everything the extension
-needs stays on your own device, inside Chrome's local storage. There is no server, no
-account, and no analytics.
+Corral has no server, no analytics, and nothing to sign up for. Everything it needs stays
+on your own device inside Chrome's storage.
+
+There is one exception, and it is entirely your choice: if you connect your GitHub account,
+Corral talks directly to GitHub's public API to find out whether your pull requests are
+still open. Those requests go from your browser straight to `api.github.com`. They do not
+pass through any server of ours, because there isn't one.
 
 ## What Corral accesses
 
@@ -21,28 +25,54 @@ To do its job, Corral reads the following from your browser:
 
 ## What Corral stores, and where
 
-Corral stores two things using Chrome's own extension storage API:
+Corral stores the following using Chrome's own extension storage API:
 
 1. **Your settings** — whether grouping is enabled, how many tabs form a group, how many
    idle hours count as stale, and whether notifications are on.
 2. **A local activity map** — for each open tab, its last-active timestamp, URL, and title,
    plus a record of which tab groups Corral created.
+3. **If you connect GitHub:** your GitHub access token, your GitHub username, and the last
+   known status of the pull requests you have open in a tab (title, repository, number, and
+   whether it is open, draft, merged, or closed).
 
 This data lives on your computer. Settings sync through your Chrome profile only if you
 have Chrome Sync enabled, which is Google's feature and under your control. The activity
-map never leaves your device at all.
+map, your GitHub token, and the pull request data are stored in local storage only —
+deliberately never in synced storage — so the token stays on the one machine where you
+authorised it and is not copied to your other devices.
 
 When you close a tab, its record is deleted. When you uninstall Corral, all of its stored
 data is removed by Chrome.
 
+## The optional GitHub connection
+
+This feature is off until you turn it on. Nothing below happens unless you connect an account.
+
+- **Signing in.** Corral uses GitHub's OAuth **device flow**. You are shown a short code and
+  you type it into `github.com/login/device` yourself. You never enter your GitHub password,
+  or any other credential, into Corral.
+- **Permission is requested late.** Access to `github.com` is an *optional* host permission.
+  Chrome only asks for it at the moment you press Connect — not when you install Corral.
+- **What Corral asks GitHub.** The status of pull requests you already have open in a tab,
+  and a list of the pull requests you authored or have been asked to review. Read-only.
+- **What Corral never does on GitHub.** It never posts, comments, approves, merges, closes,
+  or changes anything. It only reads.
+- **Where the token goes.** To `api.github.com`, as GitHub requires, and nowhere else. It is
+  never transmitted to us or to any third party.
+- **Disconnecting.** Pressing Disconnect deletes the token, your username, and all stored
+  pull request data from your device immediately. You can also revoke Corral's access at any
+  time from GitHub's own settings, under Authorised OAuth Apps.
+
 ## What Corral does NOT do
 
-- Does not send your URLs, titles, browsing history, or any other data to any server
+- Does not send your URLs, titles, browsing history, or any other data to any server of ours
+- Does not contact any third party other than GitHub, and only when you have connected it
 - Does not use analytics, telemetry, crash reporting, or tracking of any kind
 - Does not include third-party code, libraries, SDKs, or remote scripts
-- Does not require an account or collect any personal information
-- Does not sell or transfer data to third parties, because it does not collect any
-- Does not use any AI or external API
+- Does not require an account for the tab grouping and stale tab features
+- Does not sell or transfer data to third parties
+- Does not use any AI service
+- Does not write to, or modify anything in, your GitHub account
 
 ## Permissions, and why each is needed
 
@@ -51,8 +81,9 @@ data is removed by Chrome.
 | `tabs` | Read tab URLs to determine each tab's domain, and track when tabs were last used |
 | `tabGroups` | Create and update Chrome tab groups |
 | `storage` | Save settings and the local activity map on your device |
-| `alarms` | Periodically check for stale tabs in the background |
-| `notifications` | Show the optional notification when tabs have gone stale |
+| `alarms` | Periodically check for stale tabs, and for pull request status if GitHub is connected |
+| `notifications` | Show the optional notifications for stale tabs and for merged pull requests |
+| `github.com`, `api.github.com` | Optional. Requested only when you connect GitHub, used to sign in and read pull request status. Removed when you disconnect. |
 
 ## Changes to this policy
 
@@ -61,5 +92,4 @@ revised date above.
 
 ## Contact
 
-Questions about this policy or the extension: please open an issue at
-https://github.com/shaz2k/corral/issues
+Questions about this policy or the extension: [add your contact email or GitHub issues URL]
