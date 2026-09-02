@@ -204,34 +204,24 @@ function wireGithub() {
     window.close();
   });
 
-  el('prOpenAll').addEventListener('click', async (event) => {
-    const note = el('prOpenResult');
+  el('prSync').addEventListener('click', async (event) => {
+    const note = el('prSyncResult');
     event.target.disabled = true;
-    event.target.textContent = 'Opening…';
+    event.target.textContent = 'Syncing…';
+
+    // Refresh what is already open first, so any PR that just landed is flagged
+    // before we pull in more, then open tabs for anything still missing one.
+    await send({ type: 'syncPrs' });
     const result = await send({ type: 'openMissingPrs' });
-    event.target.textContent = 'Open my PRs in tabs';
+
+    event.target.textContent = 'Sync now';
     event.target.disabled = false;
 
     note.hidden = false;
-    if (result.error) {
-      note.textContent = result.error;
-    } else if (result.opened === 0) {
-      note.textContent =
-        result.total === 0
-          ? 'You have no open pull requests.'
-          : `All ${result.total} already have a tab.`;
-    } else {
-      note.textContent = `Opened ${result.opened} of ${result.total}.`;
-    }
-    await refreshCount();
-  });
-
-  el('prSync').addEventListener('click', async (event) => {
-    event.target.disabled = true;
-    event.target.textContent = 'Syncing…';
-    await send({ type: 'syncPrs' });
-    event.target.textContent = 'Sync now';
-    event.target.disabled = false;
+    if (result.error) note.textContent = result.error;
+    else if (result.opened) note.textContent = `Up to date · opened ${result.opened} new tab${result.opened === 1 ? '' : 's'}.`;
+    else if (result.total) note.textContent = `Up to date · all ${result.total} of your PRs already have a tab.`;
+    else note.textContent = 'Up to date · you have no open pull requests.';
     await refreshCount();
   });
 }

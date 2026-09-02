@@ -53,9 +53,10 @@ If your organisation enforces SAML single sign-on, the token must be authorised 
 from your GitHub token settings. Corral detects this and links straight to the authorisation
 page rather than showing an empty list.
 
-**Open my PRs in tabs** pulls up everything you have open on GitHub — authored by you or
-awaiting your review — and opens a tab for anything missing one. It matches on the pull request
-itself, not the URL, so a tab already sitting on the *Files changed* view is never duplicated.
+**Sync now** does both halves of the job: it refreshes the status of every PR tab you already
+have, then opens a tab for any of your PRs — authored or awaiting your review — that doesn't
+have one yet. Matching is on the pull request itself rather than the URL, so a tab already
+sitting on the *Files changed* view is never duplicated.
 
 **Auto-close** is off by default. Turn it on and merged PR tabs close themselves, with a
 seven-day undo. It never closes the tab you are looking at or a pinned tab, and only acts
@@ -74,10 +75,11 @@ See [PRIVACY-POLICY.md](PRIVACY-POLICY.md) for the full policy.
 
 ## Building it yourself
 
-The pull request feature needs a GitHub OAuth App client ID. If you are running your own
-build, register one at <https://github.com/settings/applications/new>, tick **Enable Device
-Flow** on the app's settings page, and put the client ID in `CLIENT_ID` at the top of
-`github.js`. Device flow uses no client secret.
+Nothing extra is needed for the token path — it works in any build. Only "sign in with GitHub"
+depends on an OAuth App: to use that, register one at
+<https://github.com/settings/applications/new>, tick **Enable Device Flow** on the app's
+settings page, and put its client ID in `CLIENT_ID` at the top of `github.js`. Device flow uses
+no client secret, so that value is safe to commit.
 
 To load it unpacked: open `chrome://extensions`, enable Developer mode, and choose **Load
 unpacked** on this directory.
