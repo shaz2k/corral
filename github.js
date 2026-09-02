@@ -22,6 +22,13 @@ export class RateLimitError extends Error {
     this.resetAt = resetAt;
   }
 }
+// A 404 on a PR that definitely exists. GitHub returns this — not 403 — when a
+// token is not permitted to see a private repo, so it is indistinguishable from
+// a deleted PR at the call site. Named so callers can report it usefully.
+export class NotVisibleError extends Error {}
+// Fine-grained PATs cannot call /search/issues at all. Discovery ("which PRs
+// await my review") depends on search, so it has to degrade rather than break.
+export class SearchUnavailableError extends Error {}
 
 /* ---------------- token storage ---------------- */
 
@@ -38,6 +45,40 @@ async function setToken(token) {
 
 export async function clearToken() {
   await chrome.storage.local.remove([TOKEN_KEY, DEVICE_KEY]);
+}
+
+/* ---------------- personal access token ---------------- */
+
+// Orgs can block unapproved OAuth Apps from private repos (GitHub answers 404),
+// which makes the device flow useless there. A PAT the user creates themselves
+// is not subject to that policy, so it is the reliable path for work accounts.
+export async function connectWithPat(rawToken) {
+  const accessToken = (rawToken || '').trim();
+  if (!accessToken) throw new Error('Paste a token first.');
+  if (/\s/.test(accessToken)) throw new Error("That does not look like a token — check for a stray space.");
+
+  let user;
+  try {
+    user = await fetchViewer(accessToken);
+  } catch (error) {
+    if (error instanceof AuthError) {
+      throw new Error('GitHub rejected that token. Check it was copied in full and has not expired.');
+    }
+    throw error;
+  }
+
+  await setToken({
+    accessToken,
+    kind: 'pat',
+    // Classic PATs report their scopes in a header; fine-grained ones send an
+    // empty value, which is how we know search is unavailable.
+    scope: user.scopeHeader || '',
+    canSearch: Boolean(user.scopeHeader),
+    login: user.login,
+    connectedAt: Date.now(),
+  });
+  await chrome.storage.local.remove(DEVICE_KEY);
+  return { login: user.login, canSearch: Boolean(user.scopeHeader) };
 }
 
 /* ---------------- device flow ---------------- */
@@ -141,12 +182,26 @@ async function api(path, token) {
     }
     throw new Error(`GitHub returned ${res.status}`);
   }
+  if (res.status === 404) throw new NotVisibleError('Not visible to this token');
   if (!res.ok) throw new Error(`GitHub returned ${res.status}`);
   return res.json();
 }
 
 async function fetchViewer(token) {
-  return api('/user', token);
+  const res = await fetch('https://api.github.com/user', {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+  });
+  if (res.status === 401) throw new AuthError('GitHub rejected the token');
+  if (!res.ok) throw new Error(`GitHub returned ${res.status}`);
+  const user = await res.json();
+  // Only classic tokens and OAuth grants report scopes; fine-grained PATs send
+  // an empty header, and those cannot use the search API at all.
+  user.scopeHeader = res.headers.get('x-oauth-scopes') || '';
+  return user;
 }
 
 /* ---------------- PR URL parsing ---------------- */
@@ -208,7 +263,8 @@ export async function fetchPrState(ref, token, viewerLogin) {
 }
 
 // Open PRs the user cares about: theirs, plus ones waiting on their review.
-export async function fetchMyOpenPrs(token) {
+export async function fetchMyOpenPrs(token, canSearch = true) {
+  if (!canSearch) throw new SearchUnavailableError('This token cannot use GitHub search');
   const queries = [
     { relation: 'author', q: 'is:open is:pr archived:false author:@me' },
     { relation: 'review', q: 'is:open is:pr archived:false review-requested:@me' },
@@ -236,7 +292,8 @@ export async function fetchMyOpenPrs(token) {
 }
 
 // Just the PRs waiting on your review, for the background discovery poll.
-export async function fetchReviewRequests(token) {
+export async function fetchReviewRequests(token, canSearch = true) {
+  if (!canSearch) throw new SearchUnavailableError('This token cannot use GitHub search');
   const q = 'is:open is:pr archived:false review-requested:@me';
   const data = await api(`/search/issues?per_page=50&q=${encodeURIComponent(q)}`, token);
   const out = [];

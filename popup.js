@@ -95,7 +95,14 @@ async function refreshGithub() {
   const { github, settings } = await send({ type: 'getState' });
   if (github.connected) {
     stopPolling();
-    el('ghLogin').textContent = `@${github.login}`;
+    const via = github.kind === 'pat' ? 'token' : 'GitHub sign-in';
+    el('ghLogin').textContent = `@${github.login} · via ${via}`;
+    el('ghNoSearch').hidden = github.canSearch !== false;
+    // Discovery needs search; hide the toggles that cannot work rather than
+    // leaving switches that silently do nothing.
+    const searchable = github.canSearch !== false;
+    el('reviewWatchEnabled').closest('.row').hidden = !searchable;
+    el('reviewAutoOpen').closest('.row').hidden = !searchable;
     for (const field of PR_FIELDS) el(field).checked = settings[field];
     showGithub('connected');
     return;
@@ -111,6 +118,38 @@ async function refreshGithub() {
 }
 
 function wireGithub() {
+  const patError = (text) => {
+    const box = el('ghPatError');
+    box.textContent = text || '';
+    box.hidden = !text;
+  };
+
+  const savePat = async () => {
+    const token = el('ghPat').value;
+    if (!token.trim()) return patError('Paste a token first.');
+    patError('');
+    el('ghPatSave').disabled = true;
+    el('ghPatSave').textContent = 'Checking…';
+    const result = await send({ type: 'connectPat', token });
+    el('ghPatSave').disabled = false;
+    el('ghPatSave').textContent = 'Connect';
+    if (result.error) return patError(result.error);
+    el('ghPat').value = '';
+    await refreshGithub();
+  };
+
+  el('ghPatSave').addEventListener('click', savePat);
+  el('ghPat').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') savePat();
+  });
+
+  el('ghPatCreate').addEventListener('click', () => {
+    // Pre-fills scope and description so the token works first time.
+    chrome.tabs.create({
+      url: 'https://github.com/settings/tokens/new?scopes=repo&description=Corral%20tab%20groups',
+    });
+  });
+
   el('ghConnect').addEventListener('click', async (event) => {
     event.target.disabled = true;
     const result = await send({ type: 'connectGithub' });

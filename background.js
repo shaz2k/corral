@@ -7,6 +7,9 @@ import {
   fetchMyOpenPrs,
   fetchPrState,
   fetchReviewRequests,
+  connectWithPat,
+  NotVisibleError,
+  SearchUnavailableError,
   getPendingDeviceFlow,
   getToken,
   pollDeviceFlow,
@@ -357,6 +360,7 @@ async function syncPullRequests() {
   // (usually: unknown -> review/mine on the first sync) needs a regroup after.
   const bucketOf = (s) => (!s ? 'unknown' : s.awaitingViewer || s.reviewedByViewer ? 'review' : s.isMine ? 'mine' : 'other');
   let bucketsChanged = false;
+  let notVisible = 0;
 
   for (const [key, tab] of refsByKey) {
     const ref = prRefForUrl(tab.url);
@@ -388,13 +392,30 @@ async function syncPullRequests() {
         await setPrError({ kind: 'rate', message: 'GitHub rate limit reached. Retrying later.', resetAt: error.resetAt });
         return { synced: 0, error: 'rate' };
       }
-      // A 404 usually means the repo is private to someone else or was deleted.
-      // Leave the last known state alone and move on.
+      // A 404 means this token cannot see the PR. Usually the repo is private
+      // and the token lacks access — for OAuth Apps that is often an org policy
+      // blocking unapproved apps. Count these so we can explain it, rather than
+      // silently leaving every tab unclassified.
+      if (error instanceof NotVisibleError) notVisible += 1;
+      // Any other error: leave the last known state alone and move on.
     }
   }
 
   await chrome.storage.local.set({ [PR_STATES_KEY]: states });
-  await setPrError(null);
+
+  // If nothing at all could be read, the token is the problem — say so instead
+  // of leaving every tab in the neutral group with no explanation.
+  if (notVisible && notVisible === refsByKey.size) {
+    await setPrError({
+      kind: 'invisible',
+      message:
+        token.kind === 'pat'
+          ? `Your token cannot see these ${notVisible === 1 ? 'pull request' : 'pull requests'}. If they are in private or organisation repos, the token needs access to those repos.`
+          : `GitHub is hiding these pull requests from Corral. Organisations often block unapproved OAuth apps — connecting with a personal access token instead avoids that policy.`,
+    });
+  } else {
+    await setPrError(null);
+  }
 
   // Must happen before the auto-close branch below, so tabs are in their final
   // group regardless of what closes.
@@ -427,8 +448,18 @@ async function checkReviewRequests() {
 
   let requests;
   try {
-    requests = await fetchReviewRequests(token.accessToken);
+    requests = await fetchReviewRequests(token.accessToken, token.canSearch !== false);
   } catch (error) {
+    if (error instanceof SearchUnavailableError) {
+      // Fine-grained PAT: discovery is impossible, but status tracking on tabs
+      // the user opens still works, so this is a notice rather than a failure.
+      await setPrError({
+        kind: 'nosearch',
+        message:
+          'This token cannot search GitHub, so Corral cannot discover new review requests. Status tracking on PR tabs you open still works. A classic token with the repo scope enables discovery.',
+      });
+      return { found: 0, error: 'nosearch' };
+    }
     if (error instanceof AuthError) {
       await clearToken();
       await setPrError({ kind: 'auth', message: 'GitHub disconnected — reconnect to keep tracking PRs.' });
@@ -812,7 +843,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       case 'getState': {
         const { stale, settings } = await findStaleTabs();
         const token = await getToken();
-        if (token) return { stale, settings, github: { connected: true, login: token.login } };
+        if (token) {
+          return {
+            stale,
+            settings,
+            github: {
+              connected: true,
+              login: token.login,
+              kind: token.kind || 'oauth',
+              canSearch: token.canSearch !== false,
+            },
+          };
+        }
         // Hand back any in-flight device flow so a reopened popup can resume it
         // instead of showing Connect again.
         const pendingDevice = await getPendingDeviceFlow();
@@ -833,13 +875,22 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           getPrError(),
           getSettings(),
         ]);
-        return { connected: true, login: token.login, prTabs, undo, error, settings };
+        return {
+          connected: true,
+          login: token.login,
+          kind: token.kind || 'oauth',
+          canSearch: token.canSearch !== false,
+          prTabs,
+          undo,
+          error,
+          settings,
+        };
       }
       case 'getOpenPrs': {
         const token = await getToken();
         if (!token) return { connected: false, prs: [] };
         try {
-          const prs = await fetchMyOpenPrs(token.accessToken);
+          const prs = await fetchMyOpenPrs(token.accessToken, token.canSearch !== false);
           const openTabs = await findPrTabs();
           const openKeys = new Set(openTabs.map((tab) => tab.key));
           return { connected: true, prs: prs.map((pr) => ({ ...pr, hasTab: openKeys.has(pr.key) })) };
@@ -847,6 +898,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           if (error instanceof AuthError) {
             await clearToken();
             return { connected: false, prs: [], error: 'auth' };
+          }
+          if (error instanceof SearchUnavailableError) {
+            return { connected: true, prs: [], canSearch: false };
           }
           return { connected: true, prs: [], error: String(error.message || error) };
         }
@@ -871,6 +925,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       case 'dismissPrUndo': {
         await chrome.storage.local.set({ [PR_UNDO_KEY]: [] });
         return { ok: true };
+      }
+      case 'connectPat': {
+        const granted = await chrome.permissions.request({ origins: GITHUB_ORIGINS });
+        if (!granted) return { error: 'Permission to reach github.com was declined.' };
+        try {
+          const result = await connectWithPat(message.token);
+          await chrome.alarms.clear(DEVICE_ALARM);
+          await installAlarms();
+          await queuePrSync();
+          await regroupAllWindows();
+          return { ok: true, ...result };
+        } catch (error) {
+          return { error: String(error.message || error) };
+        }
       }
       case 'connectGithub': {
         // The GitHub hosts are optional_host_permissions, so ask at the moment

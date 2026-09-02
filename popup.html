@@ -75,12 +75,33 @@
       </div>
 
       <div id="ghDisconnected">
-        <div class="row">
-          <label>
-            Connect GitHub
-            <span class="hint">Read-only access to the PRs you author or review</span>
-          </label>
-          <button id="ghConnect" class="primary">Connect</button>
+        <div class="pat-card">
+          <div class="pat-lead">Paste a GitHub token</div>
+          <div class="pat-note">
+            Use a <strong>classic</strong> token with the <code>repo</code> scope. Fine-grained tokens
+            cannot search GitHub, so review requests can't be discovered.
+          </div>
+          <input
+            type="password"
+            id="ghPat"
+            class="pat-input"
+            placeholder="ghp_…"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <div class="actions">
+            <button id="ghPatSave" class="primary grow">Connect</button>
+            <button id="ghPatCreate">Create one</button>
+          </div>
+          <div id="ghPatError" class="pat-error" hidden></div>
+        </div>
+
+        <div class="pat-alt">
+          <button id="ghConnect" class="linkish">Or sign in with GitHub instead</button>
+          <div class="pat-note">
+            Convenient, but organisations often block unapproved apps from private repos — if your PRs
+            never show up, that's why.
+          </div>
         </div>
       </div>
 
@@ -100,9 +121,14 @@
       </div>
 
       <div id="ghConnected" hidden>
+        <div id="ghNoSearch" class="pat-warn" hidden>
+          This token can't search GitHub, so new review requests won't be found automatically.
+          Status tracking on PR tabs you open still works.
+        </div>
+
         <div class="row">
           <label>
-            Signed in
+            Connected
             <span class="hint" id="ghLogin"></span>
           </label>
           <button id="ghDisconnect">Disconnect</button>
