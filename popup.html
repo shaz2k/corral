@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      body {
+        width: 330px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <span class="brand-mark">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+            <rect x="1.5" y="1.5" width="5" height="5" rx="1.4" fill="#fff" />
+            <rect x="8.5" y="1.5" width="5" height="5" rx="1.4" fill="#fff" />
+            <rect x="1.5" y="8.5" width="5" height="5" rx="1.4" fill="#fff" />
+            <rect x="8.5" y="8.5" width="5" height="5" rx="1.4" fill="#fff" opacity=".45" />
+          </svg>
+        </span>
+        <h1>Corral</h1>
+      </div>
+      <span id="staleCount" class="pill" hidden></span>
+    </header>
+
+    <section>
+      <div class="section-head"><h2>Grouping</h2></div>
+
+      <div class="row">
+        <label for="groupingEnabled">
+          Auto-group by domain
+          <span class="hint">Sorts tabs into groups as you browse</span>
+        </label>
+        <span class="switch">
+          <input type="checkbox" id="groupingEnabled" />
+          <span class="track"></span>
+        </span>
+      </div>
+
+      <div class="row">
+        <label for="minTabsPerGroup">
+          Tabs before grouping
+          <span class="hint">Set to 1 to group every tab on sight</span>
+        </label>
+        <span class="stepper">
+          <button type="button" data-step="-1" data-target="minTabsPerGroup" aria-label="Decrease">−</button>
+          <input type="number" id="minTabsPerGroup" min="1" max="10" />
+          <button type="button" data-step="1" data-target="minTabsPerGroup" aria-label="Increase">+</button>
+        </span>
+      </div>
+
+      <div class="row">
+        <label for="collapseNewGroups">
+          Collapse new groups
+          <span class="hint">Keeps the tab strip compact</span>
+        </label>
+        <span class="switch">
+          <input type="checkbox" id="collapseNewGroups" />
+          <span class="track"></span>
+        </span>
+      </div>
+
+      <div class="actions">
+        <button id="regroupNow" class="primary grow">Group now</button>
+        <button id="ungroupAll">Ungroup all</button>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>Pull requests</h2>
+        <div class="muted">Keeps GitHub PRs in one group and tracks when they land.</div>
+      </div>
+
+      <div id="ghDisconnected">
+        <div class="row">
+          <label>
+            Connect GitHub
+            <span class="hint">Read-only access to the PRs you author or review</span>
+          </label>
+          <button id="ghConnect" class="primary">Connect</button>
+        </div>
+      </div>
+
+      <div id="ghPending" hidden>
+        <div class="device-card">
+          <div class="device-step">1. Open <span class="device-host">github.com/login/device</span></div>
+          <div class="device-step">2. Enter this code:</div>
+          <div class="device-code-row">
+            <code id="ghCode" class="device-code"></code>
+            <button id="ghCopy">Copy</button>
+          </div>
+          <div class="device-foot">
+            <span id="ghStatus" class="muted">Waiting for authorisation…</span>
+            <button id="ghCancel">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="ghConnected" hidden>
+        <div class="row">
+          <label>
+            Signed in
+            <span class="hint" id="ghLogin"></span>
+          </label>
+          <button id="ghDisconnect">Disconnect</button>
+        </div>
+
+        <div class="row">
+          <label for="prGroupingEnabled">
+            Group PR tabs together
+            <span class="hint">One "Pull requests" group, separate from github.com</span>
+          </label>
+          <span class="switch">
+            <input type="checkbox" id="prGroupingEnabled" />
+            <span class="track"></span>
+          </span>
+        </div>
+
+        <div class="row">
+          <label for="prNotifyOnMerge">
+            Notify when a PR lands
+            <span class="hint">Tells you which tabs are safe to close</span>
+          </label>
+          <span class="switch">
+            <input type="checkbox" id="prNotifyOnMerge" />
+            <span class="track"></span>
+          </span>
+        </div>
+
+        <div class="row">
+          <label for="prAutoClose">
+            Auto-close merged PR tabs
+            <span class="hint">Off by default. Undo for 7 days. Never closes the tab you're viewing or a pinned one.</span>
+          </label>
+          <span class="switch">
+            <input type="checkbox" id="prAutoClose" />
+            <span class="track"></span>
+          </span>
+        </div>
+
+        <div class="actions">
+          <button id="prReview" class="grow">Review PR tabs</button>
+          <button id="prSync">Sync now</button>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>Stale tabs</h2>
+        <div class="muted">Corral never closes a tab without asking first.</div>
+      </div>
+
+      <div class="row">
+        <label for="staleEnabled">
+          Notify me about stale tabs
+          <span class="hint">A nudge when clutter builds up</span>
+        </label>
+        <span class="switch">
+          <input type="checkbox" id="staleEnabled" />
+          <span class="track"></span>
+        </span>
+      </div>
+
+      <div class="row">
+        <label for="staleHours">
+          Idle hours before stale
+          <span class="hint">When a tab counts as forgotten</span>
+        </label>
+        <span class="stepper">
+          <button type="button" data-step="-1" data-target="staleHours" aria-label="Decrease">−</button>
+          <input type="number" id="staleHours" min="1" max="336" />
+          <button type="button" data-step="1" data-target="staleHours" aria-label="Increase">+</button>
+        </span>
+      </div>
+
+      <div class="row">
+        <label for="staleMinCount">
+          Notify at this many
+          <span class="hint">Stay quiet below this count</span>
+        </label>
+        <span class="stepper">
+          <button type="button" data-step="-1" data-target="staleMinCount" aria-label="Decrease">−</button>
+          <input type="number" id="staleMinCount" min="1" max="100" />
+          <button type="button" data-step="1" data-target="staleMinCount" aria-label="Increase">+</button>
+        </span>
+      </div>
+
+      <div class="actions">
+        <button id="review" class="grow">Review stale tabs</button>
+      </div>
+    </section>
+
+    <script src="popup.js" type="module"></script>
+  </body>
+</html>
