@@ -51,9 +51,14 @@ data is removed by Chrome.
 
 This feature is off until you turn it on. Nothing below happens unless you connect an account.
 
-- **Signing in.** Corral uses GitHub's OAuth **device flow**. You are shown a short code and
-  you type it into `github.com/login/device` yourself. You never enter your GitHub password,
-  or any other credential, into Corral.
+- **Two ways to connect.** You can paste a **personal access token** that you create in your
+  own GitHub settings, or sign in using GitHub's OAuth **device flow**, where you are shown a
+  short code and type it into `github.com/login/device` yourself. Either way, you never enter
+  your GitHub password into Corral.
+- **Why a token is offered.** Organisations can block unapproved OAuth apps from private
+  repositories. A token you create yourself is not subject to that policy, so it is the
+  reliable option on work accounts. A pasted token is stored exactly like any other — locally,
+  on that machine only.
 - **Permission is requested late.** Access to `github.com` is an *optional* host permission.
   Chrome only asks for it at the moment you press Connect — not when you install Corral.
 - **What Corral asks GitHub.** The status of pull requests you already have open in a tab,
@@ -68,8 +73,9 @@ This feature is off until you turn it on. Nothing below happens unless you conne
 - **Where the token goes.** To `api.github.com`, as GitHub requires, and nowhere else. It is
   never transmitted to us or to any third party.
 - **Disconnecting.** Pressing Disconnect deletes the token, your username, and all stored
-  pull request data from your device immediately. You can also revoke Corral's access at any
-  time from GitHub's own settings, under Authorised OAuth Apps.
+  pull request data from your device immediately. You can also revoke access from GitHub's own
+  settings at any time — under *Personal access tokens* if you pasted a token, or under
+  *Authorised OAuth Apps* if you signed in.
 
 ## What Corral does NOT do
 

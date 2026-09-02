@@ -734,7 +734,8 @@ function openReview(hash = '') {
 
 async function installAlarms() {
   await chrome.alarms.create(STALE_ALARM, { periodInMinutes: 15, delayInMinutes: 1 });
-  // 5 minutes is the floor Chrome enforces for extension alarms.
+  // 5 minutes keeps request volume to a few percent of GitHub's hourly limit
+  // even with many PR tabs open. Chrome would allow far shorter.
   if (await getToken()) await chrome.alarms.create(PR_ALARM, { periodInMinutes: 5, delayInMinutes: 1 });
 }
 
@@ -937,6 +938,45 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       }
       case 'syncPrs':
         return queuePrSync();
+      case 'openMissingPrs': {
+        const token = await getToken();
+        if (!token) return { error: 'GitHub is not connected.' };
+        let prs;
+        try {
+          prs = await fetchMyOpenPrs(token.accessToken, token.canSearch !== false);
+        } catch (error) {
+          if (error instanceof AuthError) {
+            await clearToken();
+            return { error: 'GitHub disconnected — reconnect and try again.' };
+          }
+          if (error instanceof SsoRequiredError) {
+            return { error: 'This token needs authorising for your organisation first.', url: error.ssoUrl || '' };
+          }
+          if (error instanceof SearchUnavailableError) {
+            return { error: "This token can't search GitHub, so Corral can't list your open PRs." };
+          }
+          return { error: String(error.message || error) };
+        }
+
+        // Compare on PR identity, not URL: a tab sitting on /files or #discussion
+        // is still that PR, and a string match would open a duplicate.
+        const openKeys = new Set((await findPrTabs()).map((tab) => tab.key));
+        const missing = prs.filter((pr) => !openKeys.has(pr.key));
+
+        // Mark them seen so the review watcher doesn't treat these as new and
+        // open a second tab on its next pass.
+        const seen = await getSeenReviews();
+        const now = Date.now();
+        for (const pr of missing) {
+          await chrome.tabs.create({ url: pr.url, active: false });
+          if (pr.relation === 'review') seen[pr.key] = { firstSeenAt: now, opened: true };
+        }
+        await chrome.storage.local.set({ [SEEN_REVIEWS_KEY]: seen });
+
+        await queueStatusSync();
+        await regroupAllWindows();
+        return { ok: true, opened: missing.length, total: prs.length };
+      }
       case 'openPrTabs': {
         for (const url of message.urls) {
           try {

@@ -393,17 +393,12 @@ el('prCloseDone').addEventListener('click', async () => {
 });
 
 el('prOpenMissing').addEventListener('click', async (event) => {
-  const urls = [...document.querySelectorAll('#prAvailable li')]
-    .map((item) => item.querySelector('.tab-info')?.title)
-    .filter(Boolean);
-  const state = await chrome.runtime.sendMessage({ type: 'getPrState' });
-  const open = new Set(state.prTabs?.map((pr) => pr.url) || []);
-  const missing = urls.filter((url) => !open.has(url));
-  if (!missing.length) return;
   event.target.disabled = true;
-  await chrome.runtime.sendMessage({ type: 'openPrTabs', urls: missing });
+  const result = await chrome.runtime.sendMessage({ type: 'openMissingPrs' });
   await loadPrs();
   event.target.disabled = false;
+  if (result.error) showToast(result.error);
+  else if (result.opened) showToast(`Opened ${result.opened} PR ${result.opened === 1 ? 'tab' : 'tabs'}`);
 });
 
 el('selectAll').addEventListener('click', () => {

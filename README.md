@@ -42,9 +42,20 @@ A PR stays in Review after you submit your review — GitHub drops you from the 
 at that point, but the tab stays put rather than hopping groups mid-task, and is relabelled
 *reviewed by you*. It leaves only when the PR merges or closes.
 
-Sign-in uses GitHub's OAuth **device flow** — you type a short code into
-`github.com/login/device`, so no password or token is ever entered into the extension.
-Access is read-only; Corral never posts, comments, approves, or merges anything.
+There are two ways to connect. Pasting a **personal access token** you create yourself is the
+default, because organisations often block unapproved OAuth apps from private repos — use a
+*classic* token with the `repo` scope, since fine-grained tokens cannot call GitHub's search API
+and so cannot discover review requests. Alternatively, sign in with GitHub's OAuth **device
+flow** by typing a short code into `github.com/login/device`. Either way no password is entered
+into the extension, access is read-only, and Corral never posts, comments, approves, or merges.
+
+If your organisation enforces SAML single sign-on, the token must be authorised for that org
+from your GitHub token settings. Corral detects this and links straight to the authorisation
+page rather than showing an empty list.
+
+**Open my PRs in tabs** pulls up everything you have open on GitHub — authored by you or
+awaiting your review — and opens a tab for anything missing one. It matches on the pull request
+itself, not the URL, so a tab already sitting on the *Files changed* view is never duplicated.
 
 **Auto-close** is off by default. Turn it on and merged PR tabs close themselves, with a
 seven-day undo. It never closes the tab you are looking at or a pinned tab, and only acts

@@ -204,6 +204,28 @@ function wireGithub() {
     window.close();
   });
 
+  el('prOpenAll').addEventListener('click', async (event) => {
+    const note = el('prOpenResult');
+    event.target.disabled = true;
+    event.target.textContent = 'Opening…';
+    const result = await send({ type: 'openMissingPrs' });
+    event.target.textContent = 'Open my PRs in tabs';
+    event.target.disabled = false;
+
+    note.hidden = false;
+    if (result.error) {
+      note.textContent = result.error;
+    } else if (result.opened === 0) {
+      note.textContent =
+        result.total === 0
+          ? 'You have no open pull requests.'
+          : `All ${result.total} already have a tab.`;
+    } else {
+      note.textContent = `Opened ${result.opened} of ${result.total}.`;
+    }
+    await refreshCount();
+  });
+
   el('prSync').addEventListener('click', async (event) => {
     event.target.disabled = true;
     event.target.textContent = 'Syncing…';

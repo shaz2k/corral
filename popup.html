@@ -183,7 +183,7 @@
         <div class="row">
           <label for="prAutoClose">
             Auto-close merged PR tabs
-            <span class="hint">Off by default. Undo for 7 days. Never closes the tab you're viewing or a pinned one.</span>
+            <span class="hint">Undo for 7 days. Never closes the tab you're viewing or a pinned one.</span>
           </label>
           <span class="switch">
             <input type="checkbox" id="prAutoClose" />
@@ -192,9 +192,13 @@
         </div>
 
         <div class="actions">
-          <button id="prReview" class="grow">Review PR tabs</button>
+          <button id="prOpenAll" class="primary grow">Open my PRs in tabs</button>
           <button id="prSync">Sync now</button>
         </div>
+        <div class="actions">
+          <button id="prReview" class="grow">Review PR tabs</button>
+        </div>
+        <div id="prOpenResult" class="pat-note" hidden></div>
       </div>
     </section>
 
