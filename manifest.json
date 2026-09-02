@@ -1,10 +1,19 @@
 {
   "manifest_version": 3,
   "name": "Corral — Automatic Tab Groups",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Groups tabs by site, splits GitHub PRs into Review and My PRs, and flags forgotten ones. Never closes a tab without asking first.",
-  "permissions": ["tabs", "tabGroups", "storage", "alarms", "notifications"],
-  "optional_host_permissions": ["https://api.github.com/*", "https://github.com/*"],
+  "permissions": [
+    "tabs",
+    "tabGroups",
+    "storage",
+    "alarms",
+    "notifications"
+  ],
+  "optional_host_permissions": [
+    "https://api.github.com/*",
+    "https://github.com/*"
+  ],
   "background": {
     "service_worker": "background.js",
     "type": "module"

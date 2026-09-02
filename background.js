@@ -353,6 +353,10 @@ async function syncPullRequests() {
   // Dedupe: the same PR open in three tabs is one API call.
   const refsByKey = new Map(prTabs.map((tab) => [tab.key, tab]));
   const newlyResolved = [];
+  // Grouping classifies from these cached states, so a PR whose bucket changes
+  // (usually: unknown -> review/mine on the first sync) needs a regroup after.
+  const bucketOf = (s) => (!s ? 'unknown' : s.awaitingViewer || s.reviewedByViewer ? 'review' : s.isMine ? 'mine' : 'other');
+  let bucketsChanged = false;
 
   for (const [key, tab] of refsByKey) {
     const ref = prRefForUrl(tab.url);
@@ -365,6 +369,7 @@ async function syncPullRequests() {
       // a review (which clears requested_reviewers) doesn't move the tab.
       const reviewedByViewer = Boolean(prev?.reviewedByViewer || prev?.awaitingViewer);
       states[key] = { ...state, reviewedByViewer, checkedAt: now };
+      if (bucketOf(prev) !== bucketOf(states[key])) bucketsChanged = true;
       // Only fire on the transition, so a tab left open for days doesn't get
       // re-notified (or re-closed after the user chose to reopen it).
       const resolved = state.state === 'merged' || state.state === 'closed';
@@ -390,6 +395,10 @@ async function syncPullRequests() {
 
   await chrome.storage.local.set({ [PR_STATES_KEY]: states });
   await setPrError(null);
+
+  // Must happen before the auto-close branch below, so tabs are in their final
+  // group regardless of what closes.
+  if (bucketsChanged) await regroupAllWindows();
 
   if (newlyResolved.length) {
     if (settings.prAutoClose) await autoCloseResolved(newlyResolved);
@@ -477,7 +486,9 @@ async function checkReviewRequests() {
   await chrome.storage.local.set({ [SEEN_REVIEWS_KEY]: seen });
 
   if (fresh.length) {
-    if (toOpen.length) await regroupAllWindows();
+    // Regroup even when nothing was opened: a PR already sitting in a tab may
+    // have just been reclassified into Review.
+    await regroupAllWindows();
     notifyReviewRequests(fresh, toOpen.length);
   }
 
